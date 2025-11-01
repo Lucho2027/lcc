@@ -1,0 +1,42 @@
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.gcno
+*.gcov
+*.prof
+*.profraw
+*.profdata
+
+# Test binary, generated with `go test -c`
+*.test
+
+# Output of the go build command
+/bin/
+/build/
+/dist/
+
+# Dependency caches
+/vendor/ # If using vendored dependencies
+/pkg/ # Go module cache, typically located in GOPATH/pkg
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.bak
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Environment variables and sensitive data
+.env
+.env.*
