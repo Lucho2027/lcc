@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucho2027/serverkit"
+	"github.com/lucho2027/lcc/pkg/serverkit"
 )
 
 func TestHTTPServerLifecycle(t *testing.T) {

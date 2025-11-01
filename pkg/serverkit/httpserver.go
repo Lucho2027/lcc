@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type Hook func(ctx context.Context)
@@ -60,3 +61,20 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	})
 	return nil
 }
+
+func (s *HTTPServer) Shutdown(ctx context.Context) error {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+	return s.srv.Shutdown(ctx)
+}
+
+func (s *HTTPServer) Done() <-chan struct{} { return s.done }
+func (s *HTTPServer) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+func (s *HTTPServer) Addr() string { return s.srv.Addr }
