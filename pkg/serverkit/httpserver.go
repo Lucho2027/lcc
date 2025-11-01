@@ -77,4 +77,9 @@ func (s *HTTPServer) Err() error {
 	defer s.mu.Unlock()
 	return s.err
 }
-func (s *HTTPServer) Addr() string { return s.srv.Addr }
+func (s *HTTPServer) Addr() string {
+	if s.ln != nil {
+		return s.ln.Addr().String()
+	}
+	return s.srv.Addr
+}
