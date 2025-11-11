@@ -3,11 +3,13 @@ package serverkit
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // Lifecycle manages application startup and graceful shutdown
@@ -16,6 +18,7 @@ type Lifecycle struct {
 	cleanups        []func() error
 	shutdownTimeout time.Duration
 	started         bool
+	logger          zerolog.Logger
 }
 
 // NewLifecycle creates a new lifecycle manager
@@ -27,6 +30,7 @@ func NewLifecycle(httpServer *HTTPServer, shutdownTimeout time.Duration) *Lifecy
 		httpServer:      httpServer,
 		cleanups:        make([]func() error, 0),
 		shutdownTimeout: shutdownTimeout,
+		logger:          log.With().Str("component", "lifecycle").Logger(),
 	}
 }
 
@@ -34,6 +38,7 @@ func NewLifecycle(httpServer *HTTPServer, shutdownTimeout time.Duration) *Lifecy
 // Cleanup functions are called in reverse order (LIFO)
 func (l *Lifecycle) RegisterCleanup(fn func() error) {
 	l.cleanups = append(l.cleanups, fn)
+	l.logger.Debug().Int("cleanup_count", len(l.cleanups)).Msg("Cleanup function registered")
 }
 
 // Start starts the HTTP server (non-blocking)
@@ -44,10 +49,11 @@ func (l *Lifecycle) Start(ctx context.Context) error {
 	l.started = true
 
 	if err := l.httpServer.Start(ctx); err != nil {
+		l.logger.Error().Err(err).Msg("Failed to start HTTP server")
 		return err
 	}
 
-	log.Printf("Server listening on %s", l.httpServer.Addr())
+	l.logger.Info().Str("address", l.httpServer.Addr()).Msg("Server listening")
 	return nil
 }
 
@@ -58,12 +64,16 @@ func (l *Lifecycle) Wait() error {
 
 	select {
 	case sig := <-quit:
-		log.Printf("Received signal: %v. Starting graceful shutdown...", sig)
+		l.logger.Info().
+			Str("signal", sig.String()).
+			Msg("Received shutdown signal, starting graceful shutdown")
 		return nil
 	case <-l.httpServer.Done():
 		if err := l.httpServer.Err(); err != nil {
+			l.logger.Error().Err(err).Msg("HTTP server error")
 			return err
 		}
+		l.logger.Info().Msg("HTTP server stopped")
 		return nil
 	}
 }
@@ -77,29 +87,57 @@ func (l *Lifecycle) Shutdown(ctx context.Context) error {
 	}
 
 	// Shutdown HTTP server
-	log.Println("Shutting down HTTP server...")
+	l.logger.Info().
+		Dur("timeout", l.shutdownTimeout).
+		Msg("Shutting down HTTP server")
+
 	if err := l.httpServer.Shutdown(ctx); err != nil {
-		log.Printf("HTTP server shutdown error: %v", err)
+		l.logger.Error().Err(err).Msg("HTTP server shutdown error")
+	} else {
+		l.logger.Info().Msg("HTTP server shut down successfully")
 	}
 
 	// Run cleanup functions in reverse order (LIFO)
-	log.Println("Running cleanup functions...")
-	var cleanupErr error
-	for i := len(l.cleanups) - 1; i >= 0; i-- {
-		if err := l.cleanups[i](); err != nil {
-			log.Printf("Cleanup error: %v", err)
-			if cleanupErr == nil {
-				cleanupErr = err
+	if len(l.cleanups) > 0 {
+		l.logger.Info().
+			Int("cleanup_count", len(l.cleanups)).
+			Msg("Running cleanup functions")
+
+		var cleanupErr error
+		for i := len(l.cleanups) - 1; i >= 0; i-- {
+			if err := l.cleanups[i](); err != nil {
+				l.logger.Error().
+					Err(err).
+					Int("cleanup_index", i).
+					Msg("Cleanup function failed")
+				if cleanupErr == nil {
+					cleanupErr = err
+				}
+			} else {
+				l.logger.Debug().
+					Int("cleanup_index", i).
+					Msg("Cleanup function completed successfully")
 			}
 		}
+
+		if cleanupErr != nil {
+			l.logger.Warn().Msg("Some cleanup functions failed")
+		} else {
+			l.logger.Info().Msg("All cleanup functions completed successfully")
+		}
+
+		l.logger.Info().Msg("Shutdown complete")
+		return cleanupErr
 	}
 
-	log.Println("Shutdown complete")
-	return cleanupErr
+	l.logger.Info().Msg("Shutdown complete")
+	return nil
 }
 
 // Run is a convenience method that calls Start(), Wait(), and Shutdown()
 func (l *Lifecycle) Run(ctx context.Context) error {
+	l.logger.Info().Msg("Starting application lifecycle")
+
 	// Start server
 	if err := l.Start(ctx); err != nil {
 		return err
